@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "613412326451",
+    "project_id": "todocriss-46cad",
+    "storage_bucket": "todocriss-46cad.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:613412326451:android:d45cdc7dfa5e944cb7a746",
+        "android_client_info": {
+          "package_name": "com.example.todocriss"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAlV6s1wOmYoCsY--nwWjo0GZ0hzNMziVY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
