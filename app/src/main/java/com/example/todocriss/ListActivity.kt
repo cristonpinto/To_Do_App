@@ -41,30 +41,10 @@ import androidx.compose.runtime.collectAsState
 import com.google.firebase.FirebaseApp
 import com.google.firebase.database.ktx.database
 import com.google.firebase.ktx.Firebase
+import androidx.navigation.NavController // Added import
 import kotlin.math.*
 
-class ListActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        FirebaseApp.initializeApp(this) // Ensure Firebase is initialized
-        enableEdgeToEdge()
 
-        // Test Firebase connection
-        Firebase.database.reference.child("test").setValue("Test Message").addOnCompleteListener {
-            if (it.isSuccessful) {
-                Log.d("FirebaseTest", "Test write successful")
-            } else {
-                Log.e("FirebaseTest", "Test write failed: ${it.exception?.message}")
-            }
-        }
-
-        setContent {
-            ToDoCrissTheme {
-                TaskListScreen()
-            }
-        }
-    }
-}
 
 data class Task(
     val id: String = System.currentTimeMillis().toString(),
@@ -82,7 +62,7 @@ enum class TaskPriority(val color: Color, val label: String) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TaskListScreen(modifier: Modifier = Modifier) {
+fun TaskListScreen(navController: NavController, modifier: Modifier = Modifier) { // Added navController parameter
     val context = LocalContext.current
     val db = AppDatabase.getDatabase(context)
     val taskDao = db.taskDao()
@@ -186,7 +166,8 @@ fun TaskListScreen(modifier: Modifier = Modifier) {
                     categories = categories,
                     onCategorySelect = { selectedCategory = it },
                     completedCount = tasks.count { it.isCompleted },
-                    totalCount = tasks.size
+                    totalCount = tasks.size,
+                    navController = navController // Added navController parameter
                 )
                 Spacer(modifier = Modifier.height(24.dp))
                 TaskStatsRow(
@@ -221,7 +202,7 @@ fun TaskListScreen(modifier: Modifier = Modifier) {
                                                 tasksRef.child(updatedTask.id).setValue(updatedTask).await()
                                                 Log.d("FirebaseSync", "Toggled task synced: ${updatedTask.id}")
                                             } catch (e: Exception) {
-                                                Log.e("FirebaseSync", "Failed to toggle task ${updatedTask.id}: ${e.message}")
+                                                Log.e("FirebaseSync", "Failed to toggle task ${task.id}: ${e.message}")
                                                 e.printStackTrace()
                                             }
                                         }
@@ -234,7 +215,7 @@ fun TaskListScreen(modifier: Modifier = Modifier) {
                                     onTaskDelete = {
                                         CoroutineScope(Dispatchers.IO).launch {
                                             val taskEntity = TaskEntity(task.id, task.text, task.isCompleted, task.priority.name, task.category)
-                                            taskDao.deleteTask(taskEntity) // Use TaskEntity
+                                            taskDao.deleteTask(taskEntity)
                                             try {
                                                 tasksRef.child(task.id).removeValue().await()
                                                 Log.d("FirebaseSync", "Deleted task from Firebase: ${task.id}")
@@ -314,8 +295,7 @@ fun TaskListScreen(modifier: Modifier = Modifier) {
                 },
                 onDismiss = { showAddDialog = false; newTask = "" }
             )
-            // Add this at the end of the main Box in TaskListScreen (before the closing brace)
-// Feedback Snackbar
+            // Feedback Snackbar
             AnimatedVisibility(
                 visible = showSuccessMessage,
                 enter = slideInVertically(
@@ -491,7 +471,8 @@ fun GlassmorphismHeader(
     categories: List<String>,
     onCategorySelect: (String) -> Unit,
     completedCount: Int,
-    totalCount: Int
+    totalCount: Int,
+    navController: NavController
 ) {
     Card(
         modifier = Modifier
@@ -638,13 +619,40 @@ fun GlassmorphismHeader(
                 Spacer(modifier = Modifier.height(20.dp))
 
                 // Category Section Header
-                Text(
-                    text = "Categories",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF4A5568),
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Categories",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF4A5568)
+                    )
+
+                    // See All Button
+                    TextButton(
+                        onClick = { navController.navigate("categories") },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "See All",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFF667eea)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = ">",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF667eea)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
 
                 // Enhanced Category Pills
                 Row(

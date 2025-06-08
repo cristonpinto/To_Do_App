@@ -63,13 +63,17 @@ dependencies {
     implementation ("androidx.room:room-ktx:2.5.0")
     kapt ("androidx.room:room-compiler:2.5.0")
 
+    implementation ("com.google.firebase:firebase-database-ktx:20.3.0")
+    implementation ("androidx.room:room-runtime:2.6.0")
+    annotationProcessor ("androidx.room:room-compiler:2.6.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.9.0") // ViewModel with KTX
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.0")   // LifecycleScope
-
+    implementation ("androidx.compose.material:material-icons-extended")
     // Room Database
     implementation("androidx.room:room-runtime:2.6.1")
     kapt("androidx.room:room-compiler:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
+    implementation("androidx.navigation:navigation-compose:2.7.0")
 
     // Kotlin Coroutines (for Room)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")

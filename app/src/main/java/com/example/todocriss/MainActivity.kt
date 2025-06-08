@@ -1,6 +1,5 @@
 package com.example.todocriss
 
-import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -42,6 +41,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.navigation.NavController // Added missing import
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import com.example.todocriss.ui.theme.ToDoCrissTheme
 import kotlinx.coroutines.delay
 
@@ -51,19 +54,25 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             ToDoCrissTheme {
-                HomeScreen(
-                    onNavigateToList = {
-                        val intent = Intent(this@MainActivity, ListActivity::class.java)
-                        startActivity(intent)
+                val navController = rememberNavController()
+                NavHost(navController = navController, startDestination = "home") {
+                    composable("home") { HomeScreen(navController) }
+                    composable("taskList") { TaskListScreen(navController) }
+                    composable("categories") { CategoriesScreen(navController) }
+                    composable("categoryTasks/{category}") { backStackEntry ->
+                        CategoryTasksScreen(
+                            navController,
+                            category = backStackEntry.arguments?.getString("category") ?: "All"
+                        )
                     }
-                )
+                }
             }
         }
     }
 }
 
 @Composable
-fun HomeScreen(onNavigateToList: () -> Unit, modifier: Modifier = Modifier) {
+fun HomeScreen(navController: NavController, modifier: Modifier = Modifier) {
     // Animation states
     var showButton by remember { mutableStateOf(false) }
     var showVersion by remember { mutableStateOf(false) }
@@ -112,7 +121,7 @@ fun HomeScreen(onNavigateToList: () -> Unit, modifier: Modifier = Modifier) {
                 enter = fadeIn() + slideInVertically(initialOffsetY = { 50 })
             ) {
                 ElevatedButton(
-                    onClick = onNavigateToList,
+                    onClick = { navController.navigate("taskList") }, // Updated to use NavController
                     shape = RoundedCornerShape(32.dp),
                     colors = ButtonDefaults.elevatedButtonColors(
                         containerColor = Color(0xFF536DFE),
@@ -188,6 +197,6 @@ fun HomeScreen(onNavigateToList: () -> Unit, modifier: Modifier = Modifier) {
 @Preview(showBackground = true)
 fun HomeScreenPreview() {
     ToDoCrissTheme {
-        HomeScreen(onNavigateToList = {})
+        HomeScreen(navController = rememberNavController()) // Pass mock NavController
     }
 }

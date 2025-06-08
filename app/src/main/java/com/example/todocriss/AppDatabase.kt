@@ -1,4 +1,3 @@
-// File: F:\ToDocriss\app\src\main\java\com\example\todocriss\AppDatabase.kt
 package com.example.todocriss
 
 import android.content.Context
@@ -6,9 +5,10 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [TaskEntity::class], version = 2)
+@Database(entities = [TaskEntity::class, CategoryEntity::class], version = 3) // Increased from 2 to 3
 abstract class AppDatabase : RoomDatabase() {
     abstract fun taskDao(): TaskDao
+    abstract fun categoryDao(): CategoryDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -18,7 +18,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "task_database"
-                ).fallbackToDestructiveMigration()
+                ).fallbackToDestructiveMigration() // Use migration if preserving data is needed
                     .build()
                     .also { INSTANCE = it }
             }
