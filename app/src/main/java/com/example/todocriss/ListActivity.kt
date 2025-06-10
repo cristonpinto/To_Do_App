@@ -60,25 +60,38 @@ enum class TaskPriority(val color: Color, val label: String) {
     LOW(Color(0xFF6BCF7F), "Low")
 }
 
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TaskListScreen(navController: NavController, modifier: Modifier = Modifier) { // Added navController parameter
+fun TaskListScreen(navController: NavController, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val db = AppDatabase.getDatabase(context)
     val taskDao = db.taskDao()
     val tasks by taskDao.getAllTasks().collectAsState(initial = emptyList())
     var showSuccessMessage by remember { mutableStateOf(false) }
     var feedbackMessage by remember { mutableStateOf("") }
+
     // Initialize Firebase Database
     val firebaseDb = Firebase.database
     val tasksRef = firebaseDb.getReference("tasks")
 
-    // Sync on startup
+    // Sync on startup - Fetch from nested structure
     LaunchedEffect(Unit) {
         try {
-            val firebaseTasks = tasksRef.get().await().children.mapNotNull { it.getValue(TaskEntity::class.java) }
+            val allFirebaseTasks = mutableListOf<TaskEntity>()
+
+            // Get all categories first
+            val categoriesSnapshot = tasksRef.get().await()
+            categoriesSnapshot.children.forEach { categorySnapshot ->
+                categorySnapshot.children.forEach { taskSnapshot ->
+                    taskSnapshot.getValue(TaskEntity::class.java)?.let { firebaseTask ->
+                        allFirebaseTasks.add(firebaseTask)
+                    }
+                }
+            }
+
             val localTaskIds = tasks.map { it.id }
-            firebaseTasks.forEach { firebaseTask ->
+            allFirebaseTasks.forEach { firebaseTask ->
                 if (!localTaskIds.contains(firebaseTask.id)) {
                     taskDao.insertTask(firebaseTask)
                     Log.d("FirebaseSync", "Inserted Firebase task: ${firebaseTask.id}")
@@ -90,18 +103,20 @@ fun TaskListScreen(navController: NavController, modifier: Modifier = Modifier) 
         }
     }
 
-    // Sync local changes
+    // Sync local changes to nested structure
     LaunchedEffect(tasks) {
         tasks.forEach { task ->
             try {
-                tasksRef.child(task.id).setValue(task).await()
-                Log.d("FirebaseSync", "Synced task to Firebase: ${task.id}")
+                // Save to nested structure: tasks/category/taskId
+                tasksRef.child(task.category).child(task.id).setValue(task).await()
+                Log.d("FirebaseSync", "Synced task to Firebase: ${task.category}/${task.id}")
             } catch (e: Exception) {
                 Log.e("FirebaseSync", "Failed to sync task ${task.id}: ${e.message}")
                 e.printStackTrace()
             }
         }
     }
+
 
     var showAddDialog by remember { mutableStateOf(false) }
     var newTask by remember { mutableStateOf("") }
@@ -198,9 +213,12 @@ fun TaskListScreen(navController: NavController, modifier: Modifier = Modifier) 
                                             taskDao.updateTask(
                                                 TaskEntity(updatedTask.id, updatedTask.text, updatedTask.isCompleted, updatedTask.priority.name, updatedTask.category)
                                             )
+                                            val taskEntity = TaskEntity(updatedTask.id, updatedTask.text, updatedTask.isCompleted, updatedTask.priority.name, updatedTask.category)
+                                            taskDao.updateTask(taskEntity)
                                             try {
-                                                tasksRef.child(updatedTask.id).setValue(updatedTask).await()
-                                                Log.d("FirebaseSync", "Toggled task synced: ${updatedTask.id}")
+                                                // Save to nested structure
+                                                tasksRef.child(updatedTask.category).child(updatedTask.id).setValue(taskEntity).await()
+                                                Log.d("FirebaseSync", "Toggled task synced: ${updatedTask.category}/${updatedTask.id}")
                                             } catch (e: Exception) {
                                                 Log.e("FirebaseSync", "Failed to toggle task ${task.id}: ${e.message}")
                                                 e.printStackTrace()

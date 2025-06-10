@@ -3,15 +3,20 @@ package com.example.todocriss
 import android.util.Log
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,8 +29,12 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -154,57 +163,107 @@ fun CategoriesScreen(navController: NavController) {
         }
     }
 
-    // Load categories from Firebase
+    // Replace the entire LaunchedEffect block with this corrected version
     LaunchedEffect(Unit) {
+        val categoriesRef = firebaseDb.getReference("categories")
         val tasksRef = firebaseDb.getReference("tasks")
 
-        tasksRef.addValueEventListener(object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                val firebaseCategories = mutableListOf<CategoryItem>()
+        // Combined listener for both categories and tasks
+        val updateCategories = {
+            categoriesRef.get().addOnSuccessListener { categoriesSnapshot ->
+                tasksRef.get().addOnSuccessListener { tasksSnapshot ->
+                    val firebaseCategories = mutableListOf<CategoryItem>()
 
-                // Add default categories first
-                firebaseCategories.addAll(defaultCategories)
+                    // Add default categories with actual task counts
+                    val defaultCategoriesWithCounts = defaultCategories.map { defaultCat ->
+                        val taskCount = tasksSnapshot.child(defaultCat.name).children.count()
+                        defaultCat.copy(taskCount = taskCount)
+                    }
+                    firebaseCategories.addAll(defaultCategoriesWithCounts)
 
-                // Add Firebase categories (excluding default ones)
-                for (categorySnapshot in snapshot.children) {
-                    val categoryName = categorySnapshot.key ?: continue
+                    // Add custom categories from Firebase categories node
+                    for (categorySnapshot in categoriesSnapshot.children) {
+                        val categoryName = categorySnapshot.key
+                        if (categoryName != null &&
+                            !defaultCategories.any { it.name.equals(categoryName, ignoreCase = true) }) {
 
-                    // Skip if it's already a default category
-                    if (defaultCategories.any { it.name.equals(categoryName, ignoreCase = true) }) {
-                        continue
+                            // Get task count from tasks node
+                            val taskCount = tasksSnapshot.child(categoryName).children.count()
+
+                            firebaseCategories.add(
+                                CategoryItem(
+                                    name = categoryName,
+                                    icon = getCategoryIcon(categoryName),
+                                    color = getCategoryColor(categoryName),
+                                    taskCount = taskCount,
+                                    isDefault = false
+                                )
+                            )
+                        }
                     }
 
-                    // Count tasks in this category
-                    val taskCount = if (categorySnapshot.hasChildren()) {
-                        categorySnapshot.children.count()
-                    } else {
-                        0
+                    categories.clear()
+                    categories.addAll(firebaseCategories)
+                    isLoading = false
+
+                    Log.d("Firebase", "Loaded ${categories.size} categories with updated task counts")
+                }.addOnFailureListener { error ->
+                    Log.e("Firebase", "Failed to load tasks: ${error.message}")
+                    // Still show categories even if tasks fail to load
+                    val firebaseCategories = mutableListOf<CategoryItem>()
+                    firebaseCategories.addAll(defaultCategories)
+
+                    for (categorySnapshot in categoriesSnapshot.children) {
+                        val categoryName = categorySnapshot.key
+                        if (categoryName != null &&
+                            !defaultCategories.any { it.name.equals(categoryName, ignoreCase = true) }) {
+
+                            firebaseCategories.add(
+                                CategoryItem(
+                                    name = categoryName,
+                                    icon = getCategoryIcon(categoryName),
+                                    color = getCategoryColor(categoryName),
+                                    taskCount = 0,
+                                    isDefault = false
+                                )
+                            )
+                        }
                     }
 
-                    val categoryItem = CategoryItem(
-                        name = categoryName,
-                        icon = getCategoryIcon(categoryName),
-                        color = getCategoryColor(categoryName),
-                        taskCount = taskCount,
-                        isDefault = false
-                    )
-
-                    firebaseCategories.add(categoryItem)
+                    categories.clear()
+                    categories.addAll(firebaseCategories)
+                    isLoading = false
                 }
-
-                categories.clear()
-                categories.addAll(firebaseCategories)
-                isLoading = false
-
-                Log.d("Firebase", "Loaded ${categories.size} categories")
-            }
-
-            override fun onCancelled(error: DatabaseError) {
+            }.addOnFailureListener { error ->
                 Log.e("Firebase", "Failed to load categories: ${error.message}")
-                // Load only default categories on error
                 categories.clear()
                 categories.addAll(defaultCategories)
                 isLoading = false
+            }
+        }
+
+        // Listen to categories changes
+        categoriesRef.addValueEventListener(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                updateCategories()
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Log.e("Firebase", "Categories listener cancelled: ${error.message}")
+                categories.clear()
+                categories.addAll(defaultCategories)
+                isLoading = false
+            }
+        })
+
+        // Listen to tasks changes to update counts
+        tasksRef.addValueEventListener(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                updateCategories()
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Log.e("Firebase", "Tasks listener cancelled: ${error.message}")
             }
         })
     }
@@ -568,135 +627,16 @@ fun CategoriesScreen(navController: NavController) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Add New Category Section - Enhanced with modern design
-            AnimatedVisibility(
-                visible = isAddingCategory,
-                enter = slideInVertically() + fadeIn(),
-                exit = slideOutVertically() + fadeOut()
-            ) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .shadow(
-                            elevation = 8.dp,
-                            shape = RoundedCornerShape(20.dp),
-                            spotColor = AppColors.PrimaryBlue.copy(alpha = 0.1f)
-                        ),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = AppColors.CardBackground)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(20.dp)
-                    ) {
-                        Text(
-                            text = "Create New Category",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = AppColors.TextPrimary,
-                            modifier = Modifier.padding(bottom = 12.dp)
-                        )
-
-                        OutlinedTextField(
-                            value = newCategory,
-                            onValueChange = { newCategory = it },
-                            label = { Text("Category Name") },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Rounded.Add,
-                                    contentDescription = "Add category",
-                                    tint = AppColors.PrimaryBlue
-                                )
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = AppColors.PrimaryBlue,
-                                focusedLabelColor = AppColors.PrimaryBlue,
-                                unfocusedBorderColor = AppColors.TextSecondary.copy(alpha = 0.3f)
-                            ),
-                            singleLine = true
-                        )
-
-                        Spacer(modifier = Modifier.height(20.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            // Cancel Button - Modern outline design
-                            OutlinedButton(
-                                onClick = {
-                                    isAddingCategory = false
-                                    newCategory = ""
-                                },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp),
-                                border = ButtonDefaults.outlinedButtonBorder.copy(
-                                    width = 1.5.dp
-                                )
-                            ) {
-                                Text(
-                                    "Cancel",
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-
-                            // Add Button - Modern gradient design
-                            Button(
-                                onClick = {
-                                    if (newCategory.isNotBlank() && !categories.any { it.name.equals(newCategory, ignoreCase = true) }) {
-                                        // Create Firebase path for new category under tasks/{newCategory}
-                                        CoroutineScope(Dispatchers.IO).launch {
-                                            try {
-                                                val tasksRef = firebaseDb.getReference("tasks").child(newCategory)
-                                                tasksRef.setValue(true).await() // Creates the endpoint e.g., tasks/Travel
-                                                Log.d("Firebase", "Created category endpoint: tasks/$newCategory")
-                                            } catch (e: Exception) {
-                                                Log.e("Firebase", "Failed to create category endpoint: ${e.message}")
-                                            }
-                                        }
-
-                                        newCategory = ""
-                                        isAddingCategory = false
-                                        showSuccessAnimation = true
-
-                                        // Reset success animation
-                                        CoroutineScope(Dispatchers.Main).launch {
-                                            delay(800)
-                                            showSuccessAnimation = false
-                                        }
-                                    }
-                                },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = AppColors.PrimaryBlue
-                                ),
-                                elevation = ButtonDefaults.buttonElevation(
-                                    defaultElevation = 4.dp,
-                                    pressedElevation = 8.dp
-                                )
-                            ) {
-                                Text(
-                                    "Add Category",
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
             // Bottom Action Buttons - Enhanced modern design
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Add Category Button - Modern Elevated FAB
+                // Add Category Button - Modern Elevated FAB (Updated to trigger modal)
                 FloatingActionButton(
-                    onClick = { isAddingCategory = !isAddingCategory },
+                    onClick = {
+                        isAddingCategory = true // This will now trigger the modal bottom sheet
+                    },
                     modifier = Modifier.weight(1f),
                     containerColor = AppColors.PrimaryBlue,
                     shape = RoundedCornerShape(16.dp),
@@ -710,13 +650,13 @@ fun CategoriesScreen(navController: NavController) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = if (isAddingCategory) Icons.Rounded.Close else Icons.Rounded.Add,
-                            contentDescription = if (isAddingCategory) "Cancel" else "Add Category",
+                            imageVector = Icons.Rounded.Add,
+                            contentDescription = "Add Category",
                             tint = Color.White
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = if (isAddingCategory) "Cancel" else "Add Category",
+                            text = "Add Category",
                             color = Color.White,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -749,6 +689,367 @@ fun CategoriesScreen(navController: NavController) {
                             fontWeight = FontWeight.Medium
                         )
                     }
+                }
+            }
+        }
+
+        // Modal Bottom Sheet for Adding Category - Apple-style design
+        if (isAddingCategory) {
+            val bottomSheetState = rememberModalBottomSheetState(
+                skipPartiallyExpanded = false
+            )
+            val hapticFeedback = LocalHapticFeedback.current
+
+            LaunchedEffect(isAddingCategory) {
+                if (isAddingCategory) {
+                    bottomSheetState.show()
+                }
+            }
+
+            ModalBottomSheet(
+                onDismissRequest = {
+                    isAddingCategory = false
+                    newCategory = ""
+                },
+                sheetState = bottomSheetState,
+                windowInsets = WindowInsets(0),
+                dragHandle = {
+                    // Custom drag handle - Apple style
+                    Surface(
+                        modifier = Modifier
+                            .padding(vertical = 12.dp)
+                            .size(width = 36.dp, height = 4.dp),
+                        shape = RoundedCornerShape(2.dp),
+                        color = AppColors.TextSecondary.copy(alpha = 0.3f)
+                    ) {}
+                },
+                containerColor = AppColors.CardBackground,
+                contentColor = AppColors.TextPrimary,
+                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                tonalElevation = 16.dp
+
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 8.dp)
+                        .navigationBarsPadding()
+                        .imePadding()
+                ) {
+                    // Header Section - Apple style
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 20.dp)
+                    ) {
+                        // Cancel button (top-left)
+                        TextButton(
+                            onClick = {
+                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                isAddingCategory = false
+                                newCategory = ""
+                            },
+                            modifier = Modifier.align(Alignment.CenterStart)
+                        ) {
+                            Text(
+                                text = "Cancel",
+                                color = AppColors.PrimaryBlue,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+
+                        // Title (center)
+                        Text(
+                            text = "New Category",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = AppColors.TextPrimary,
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+
+                        // Add button (top-right)
+                        // Add button (top-right)
+                        TextButton(
+                            onClick = {
+                                if (newCategory.isNotBlank() && !categories.any { it.name.equals(newCategory, ignoreCase = true) }) {
+                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+
+                                    val categoryToAdd = newCategory.trim()
+
+                                    // Create category directly under root/categories
+                                    CoroutineScope(Dispatchers.IO).launch {
+                                        try {
+                                            val categoryRef = firebaseDb.getReference("categories").child(categoryToAdd)
+
+                                            val categoryData = mapOf(
+                                                "name" to categoryToAdd,
+                                                "created" to System.currentTimeMillis(),
+                                                "isCustom" to true,
+                                                "taskCount" to 0
+                                            )
+
+                                            categoryRef.setValue(categoryData).await()
+                                            Log.d("Firebase", "Created category: categories/$categoryToAdd")
+                                        } catch (e: Exception) {
+                                            Log.e("Firebase", "Failed to create category: ${e.message}")
+                                        }
+                                    }
+
+                                    newCategory = ""
+                                    isAddingCategory = false
+                                    showSuccessAnimation = true
+
+                                    CoroutineScope(Dispatchers.Main).launch {
+                                        delay(800)
+                                        showSuccessAnimation = false
+                                    }
+                                }
+                            },
+                            // ... rest of button code
+                            // ... rest of button code
+                            enabled = newCategory.isNotBlank() && !categories.any { it.name.equals(newCategory, ignoreCase = true) },
+                            modifier = Modifier.align(Alignment.CenterEnd)
+                        ) {
+                            Text(
+                                text = "Add",
+                                color = if (newCategory.isNotBlank() && !categories.any { it.name.equals(newCategory, ignoreCase = true) })
+                                    AppColors.PrimaryBlue else AppColors.TextSecondary.copy(alpha = 0.5f),
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
+                    // Category Icon Preview Section
+                    val previewIcon = getCategoryIcon(newCategory.ifBlank { "New Category" })
+                    val previewColor = getCategoryColor(newCategory.ifBlank { "New Category" })
+
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 24.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = AppColors.LightBackground
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(20.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "Category Preview",
+                                fontSize = 14.sp,
+                                color = AppColors.TextSecondary,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.padding(bottom = 16.dp)
+                            )
+
+                            // Preview Icon
+                            Box(
+                                modifier = Modifier
+                                    .size(72.dp)
+                                    .background(
+                                        brush = Brush.linearGradient(
+                                            colors = listOf(
+                                                previewColor,
+                                                previewColor.copy(alpha = 0.7f)
+                                            )
+                                        ),
+                                        shape = CircleShape
+                                    )
+                                    .animateContentSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = previewIcon,
+                                    contentDescription = "Category Preview",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(36.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Text(
+                                text = newCategory.ifBlank { "Category Name" },
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = AppColors.TextPrimary,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+
+                    // Category Name Input Field - Modern Apple style
+                    OutlinedTextField(
+                        value = newCategory,
+                        onValueChange = { newCategory = it },
+                        label = { Text("Category Name") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.Label,
+                                contentDescription = "Category name",
+                                tint = AppColors.PrimaryBlue
+                            )
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = AppColors.PrimaryBlue,
+                            focusedLabelColor = AppColors.PrimaryBlue,
+                            unfocusedBorderColor = AppColors.TextSecondary.copy(alpha = 0.3f)
+                        ),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(
+                            onDone = {
+                                if (newCategory.isNotBlank() && !categories.any { it.name.equals(newCategory, ignoreCase = true) }) {
+                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+
+                                    val categoryToAdd = newCategory.trim()
+
+                                    // Create category directly under root/categories
+                                    CoroutineScope(Dispatchers.IO).launch {
+                                        try {
+                                            val categoryRef = firebaseDb.getReference("categories").child(categoryToAdd)
+
+                                            val categoryData = mapOf(
+                                                "name" to categoryToAdd,
+                                                "created" to System.currentTimeMillis(),
+                                                "isCustom" to true,
+                                                "taskCount" to 0
+                                            )
+
+                                            categoryRef.setValue(categoryData).await()
+                                            Log.d("Firebase", "Created category: categories/$categoryToAdd")
+                                        } catch (e: Exception) {
+                                            Log.e("Firebase", "Failed to create category: ${e.message}")
+                                        }
+                                    }
+
+                                    newCategory = ""
+                                    isAddingCategory = false
+                                    showSuccessAnimation = true
+
+                                    CoroutineScope(Dispatchers.Main).launch {
+                                        delay(800)
+                                        showSuccessAnimation = false
+                                    }
+                                }
+                            }
+                        )
+                    )
+
+                    // Category Suggestions - Horizontal scrolling cards
+                    Text(
+                        text = "Suggested Categories",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = AppColors.TextPrimary,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+
+                    val suggestions = listOf(
+                        "Travel", "Food", "Fitness", "Study", "Finance",
+                        "Entertainment", "Family", "Business", "Technology", "Hobby"
+                    )
+
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp)
+                    ) {
+                        items(suggestions) { suggestion ->
+                            val suggestionIcon = getCategoryIcon(suggestion)
+                            val suggestionColor = getCategoryColor(suggestion)
+
+                            Card(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable {
+                                        hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        newCategory = suggestion
+                                    },
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(
+                                    width = 1.dp,
+                                    color = if (newCategory == suggestion)
+                                        suggestionColor else AppColors.TextSecondary.copy(alpha = 0.2f)
+                                ),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (newCategory == suggestion)
+                                        suggestionColor.copy(alpha = 0.1f) else AppColors.CardBackground
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = suggestionIcon,
+                                        contentDescription = suggestion,
+                                        tint = suggestionColor,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = suggestion,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = if (newCategory == suggestion)
+                                            suggestionColor else AppColors.TextPrimary
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Tips Section
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 16.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = AppColors.InfoBlue.copy(alpha = 0.1f)
+                        ),
+                        border = BorderStroke(
+                            width = 1.dp,
+                            color = AppColors.InfoBlue.copy(alpha = 0.2f)
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Info,
+                                contentDescription = "Tip",
+                                tint = AppColors.InfoBlue,
+                                modifier = Modifier
+                                    .padding(top = 2.dp)
+                                    .size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = "Categories help you organize your tasks. The app will automatically choose an icon and color based on the category name.",
+                                fontSize = 13.sp,
+                                color = AppColors.TextPrimary.copy(alpha = 0.8f),
+                                lineHeight = 18.sp
+                            )
+                        }
+                    }
+
+                    // Extra spacing at bottom for better UX
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
             }
         }
