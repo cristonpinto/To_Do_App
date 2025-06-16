@@ -1,5 +1,10 @@
 package com.example.todocriss
 
+
+
+
+
+
 import android.util.Log
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -354,67 +359,7 @@ fun CategoriesScreen(navController: NavController) {
 
             // Stats Row - Modern UI Element
             if (!isLoading && categories.isNotEmpty()) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                        .shadow(
-                            elevation = 4.dp,
-                            shape = RoundedCornerShape(20.dp),
-                            spotColor = AppColors.TextPrimary.copy(alpha = 0.1f)
-                        ),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = AppColors.CardBackground)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceEvenly
-                    ) {
-                        // Total Categories Stat
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = "${categories.size}",
-                                fontSize = 22.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = AppColors.PrimaryBlue
-                            )
-                            Text(
-                                text = "Categories",
-                                fontSize = 12.sp,
-                                color = AppColors.TextSecondary
-                            )
-                        }
 
-                        // Divider
-                        Box(
-                            modifier = Modifier
-                                .height(36.dp)
-                                .width(1.dp)
-                                .background(AppColors.TextSecondary.copy(alpha = 0.2f))
-                        )
-
-                        // Total Tasks Stat
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = "${categories.sumOf { it.taskCount }}",
-                                fontSize = 22.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = AppColors.SuccessGreen
-                            )
-                            Text(
-                                text = "Total Tasks",
-                                fontSize = 12.sp,
-                                color = AppColors.TextSecondary
-                            )
-                        }
-                    }
-                }
 
                 Spacer(modifier = Modifier.height(16.dp))
             }

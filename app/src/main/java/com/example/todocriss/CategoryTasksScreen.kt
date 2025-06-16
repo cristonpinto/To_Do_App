@@ -1,4 +1,7 @@
 package com.example.todocriss
+import androidx.compose.foundation.BorderStroke
+
+
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.shape.CircleShape
@@ -54,6 +57,7 @@ fun CategoryTasksScreen(navController: NavController, category: String) {
     var showSuccessAnimation by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(true) }
     var completedTasks by remember { mutableStateOf(setOf<String>()) }
+    var selectedPriority by remember { mutableStateOf("MEDIUM") }
 
     // Get category icon and color
     fun getCategoryIcon(categoryName: String): ImageVector {
@@ -455,7 +459,10 @@ fun CategoryTasksScreen(navController: NavController, category: String) {
 
                 // Add task button
                 Button(
-                    onClick = { showAddDialog = true },
+                    onClick = {
+                        showAddDialog = true
+
+                    },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.buttonColors(
@@ -509,94 +516,253 @@ fun CategoryTasksScreen(navController: NavController, category: String) {
         }
     }
 
-    // Enhanced Add Task Dialog
+    // Apple-style Modal Bottom Sheet for Adding Task
     if (showAddDialog) {
-        AlertDialog(
+        val bottomSheetState = rememberModalBottomSheetState(
+            skipPartiallyExpanded = false
+        )
+
+        LaunchedEffect(showAddDialog) {
+            if (showAddDialog) {
+                bottomSheetState.show()
+            }
+        }
+
+        ModalBottomSheet(
             onDismissRequest = {
                 showAddDialog = false
                 newTaskText = ""
             },
-            title = {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = categoryIcon,
-                        contentDescription = "Category",
-                        tint = categoryColor,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Add Task to $category",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
+            sheetState = bottomSheetState,
+            windowInsets = WindowInsets(0),
+            dragHandle = {
+                Surface(
+                    modifier = Modifier
+                        .padding(vertical = 12.dp)
+                        .size(width = 36.dp, height = 4.dp),
+                    shape = RoundedCornerShape(2.dp),
+                    color = AppColors.TextSecondary.copy(alpha = 0.3f)
+                ) {}
             },
-            text = {
+            containerColor = AppColors.CardBackground,
+            contentColor = AppColors.TextPrimary,
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+            tonalElevation = 16.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 8.dp)
+                    .navigationBarsPadding()
+                    .imePadding()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 20.dp)
+                ) {
+                    TextButton(
+                        onClick = {
+                            showAddDialog = false
+                            newTaskText = ""
+                        },
+                        modifier = Modifier.align(Alignment.CenterStart)
+                    ) {
+                        Text(
+                            text = "Cancel",
+                            color = AppColors.PrimaryBlue,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.align(Alignment.Center)
+                    ) {
+                        Icon(
+                            imageVector = categoryIcon,
+                            contentDescription = "Category",
+                            tint = categoryColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "New Task for $category",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = AppColors.TextPrimary
+                        )
+                    }
+
+                    TextButton(
+                        onClick = {
+                            if (newTaskText.isNotBlank()) {
+                                val newTask = TaskEntity(
+                                    id = System.currentTimeMillis().toString(),
+                                    text = newTaskText,
+                                    category = category,
+                                    priority = selectedPriority // Use selected priority
+                                )
+                                CoroutineScope(Dispatchers.IO).launch {
+                                    try {
+                                        taskDao.insertTask(newTask)
+                                        tasksRef.child(newTask.id).setValue(newTask).await()
+                                        Log.d("FirebaseSync", "Added task to $category: ${newTask.id}")
+                                    } catch (e: Exception) {
+                                        Log.e("FirebaseSync", "Failed to add task to $category: ${e.message}")
+                                    }
+                                }
+                                newTaskText = ""
+                                showAddDialog = false
+                                showSuccessAnimation = true
+
+                                CoroutineScope(Dispatchers.Main).launch {
+                                    delay(500)
+                                    showSuccessAnimation = false
+                                }
+                            }
+                        },
+                        enabled = newTaskText.isNotBlank(),
+                        modifier = Modifier.align(Alignment.CenterEnd)
+                    ) {
+                        Text(
+                            text = "Add",
+                            color = if (newTaskText.isNotBlank())
+                                categoryColor else AppColors.TextSecondary.copy(alpha = 0.5f),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+
+                // Task Preview Card
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 24.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = AppColors.LightBackground
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp)
+                    ) {
+                        // Task Preview Header
+                        Text(
+                            text = "Task Preview",
+                            fontSize = 14.sp,
+                            color = AppColors.TextSecondary,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(bottom = 16.dp)
+                        )
+
+                        // Task Preview Content
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp)
+                        ) {
+                            // Checkbox preview
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .background(
+                                        Color.Transparent,
+                                        CircleShape
+                                    )
+                                    .clip(CircleShape)
+                                    .background(
+                                        categoryColor.copy(alpha = 0.2f),
+                                        CircleShape
+                                    )
+                            )
+
+                            Spacer(modifier = Modifier.width(16.dp))
+
+                            // Task text preview
+                            Text(
+                                text = if (newTaskText.isBlank()) "Your task will appear here" else newTaskText,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = if (newTaskText.isBlank())
+                                    AppColors.TextSecondary.copy(alpha = 0.6f)
+                                else
+                                    AppColors.TextPrimary
+                            )
+                        }
+                    }
+                }
+
+                // Priority Selection
+                var selectedPriority by remember { mutableStateOf("Medium") } // State for priority
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf("Low", "Medium", "High").forEach { priority ->
+                        Surface(
+                            modifier = Modifier
+                                .clickable {
+                                    selectedPriority = priority
+                                }
+                                .padding(vertical = 4.dp, horizontal = 8.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (selectedPriority == priority)
+                                categoryColor.copy(alpha = 0.2f)
+                            else
+                                AppColors.CardBackground,
+                            border = BorderStroke(
+                                1.dp,
+                                if (selectedPriority == priority) categoryColor else AppColors.TextSecondary.copy(alpha = 0.3f)
+                            )
+                        ) {
+                            Text(
+                                text = priority,
+                                fontSize = 14.sp,
+                                fontWeight = if (selectedPriority == priority) FontWeight.SemiBold else FontWeight.Medium,
+                                color = if (selectedPriority == priority) categoryColor else AppColors.TextPrimary,
+                                modifier = Modifier.padding(8.dp)
+                            )
+                        }
+                    }
+                }
+
+                // Task Input Field - Modern Apple style
                 OutlinedTextField(
                     value = newTaskText,
                     onValueChange = { newTaskText = it },
                     label = { Text("Task Description") },
                     placeholder = { Text("What needs to be done?") },
-                    modifier = Modifier.fillMaxWidth(),
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Assignment,
+                            contentDescription = "Task",
+                            tint = categoryColor
+                        )
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = categoryColor,
                         focusedLabelColor = categoryColor,
+                        unfocusedBorderColor = AppColors.TextSecondary.copy(alpha = 0.3f),
                         cursorColor = categoryColor
                     )
                 )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (newTaskText.isNotBlank()) {
-                            val newTask = TaskEntity(
-                                id = System.currentTimeMillis().toString(),
-                                text = newTaskText,
-                                category = category
-                            )
-                            CoroutineScope(Dispatchers.IO).launch {
-                                try {
-                                    taskDao.insertTask(newTask)
-                                    tasksRef.child(newTask.id).setValue(newTask).await()
-                                    Log.d("FirebaseSync", "Added task to $category: ${newTask.id}")
-                                } catch (e: Exception) {
-                                    Log.e("FirebaseSync", "Failed to add task to $category: ${e.message}")
-                                }
-                            }
-                            newTaskText = ""
-                            showAddDialog = false
-                            showSuccessAnimation = true
 
-                            // Reset success animation
-                            CoroutineScope(Dispatchers.Main).launch {
-                                delay(500)
-                                showSuccessAnimation = false
-                            }
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = categoryColor
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text("Add Task")
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        showAddDialog = false
-                        newTaskText = ""
-                    }
-                ) {
-                    Text("Cancel", color = AppColors.TextSecondary)
-                }
-            },
-            shape = RoundedCornerShape(20.dp)
-        )
+                // Add some spacing at the bottom
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+        }
     }
 }

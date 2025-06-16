@@ -1,5 +1,12 @@
 package com.example.todocriss
 
+
+
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.material3.Divider
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -262,7 +269,8 @@ fun TaskListScreen(navController: NavController, modifier: Modifier = Modifier) 
             }
         }
         if (showAddDialog) {
-            ModernAddTaskDialog(
+            // Replace it with:
+            AppleStyleAddTaskBottomSheet(
                 taskText = newTask,
                 onTaskTextChange = { newTask = it },
                 priority = newTaskPriority,
@@ -282,21 +290,19 @@ fun TaskListScreen(navController: NavController, modifier: Modifier = Modifier) 
                         CoroutineScope(Dispatchers.IO).launch {
                             try {
                                 taskDao.insertTask(newTaskEntity)
-                                tasksRef.child(newTaskEntity.id).setValue(newTaskEntity).await()
+                                tasksRef.child(newTaskEntity.category).child(newTaskEntity.id).setValue(newTaskEntity).await()
                                 Log.d("FirebaseSync", "New task added to Firebase: ${newTaskEntity.id}")
 
-                                // Show success feedback
                                 CoroutineScope(Dispatchers.Main).launch {
                                     feedbackMessage = "Task added successfully! ✅"
                                     showSuccessMessage = true
-                                    delay(3000) // Hide after 3 seconds
+                                    delay(3000)
                                     showSuccessMessage = false
                                 }
                             } catch (e: Exception) {
                                 Log.e("FirebaseSync", "Failed to add task ${newTaskEntity.id}: ${e.message}")
                                 e.printStackTrace()
 
-                                // Show error feedback
                                 CoroutineScope(Dispatchers.Main).launch {
                                     feedbackMessage = "Failed to add task ❌"
                                     showSuccessMessage = true
@@ -311,7 +317,13 @@ fun TaskListScreen(navController: NavController, modifier: Modifier = Modifier) 
                     }
                     showAddDialog = false
                 },
-                onDismiss = { showAddDialog = false; newTask = "" }
+                onDismiss = {
+                    showAddDialog = false
+                    newTask = ""
+                    newTaskPriority = TaskPriority.MEDIUM
+                    newTaskCategory = "Personal"
+                },
+                isVisible = showAddDialog
             )
             // Feedback Snackbar
             AnimatedVisibility(
@@ -1023,7 +1035,7 @@ fun EmptyTasksPlaceholder() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ModernAddTaskDialog(
+fun AppleStyleAddTaskBottomSheet(
     taskText: String,
     onTaskTextChange: (String) -> Unit,
     priority: TaskPriority,
@@ -1032,205 +1044,424 @@ fun ModernAddTaskDialog(
     selectedCategory: String,
     onCategoryChange: (String) -> Unit,
     onConfirm: (String, TaskPriority, String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    isVisible: Boolean
 ) {
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
+    val density = LocalDensity.current
+    var dragOffset by remember { mutableStateOf(0f) }
+    val animatedOffset by animateFloatAsState(
+        targetValue = if (isVisible) 0f else 1000f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "bottomSheetOffset"
+    )
+
+    // Background overlay
+    AnimatedVisibility(
+        visible = isVisible,
+        enter = fadeIn(tween(300)),
+        exit = fadeOut(tween(300))
+    ) {
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = Color.White
-            ),
-            elevation = CardDefaults.cardElevation(
-                defaultElevation = 8.dp
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { onDismiss() }
+        )
+    }
+
+    // Bottom Sheet Content
+    AnimatedVisibility(
+        visible = isVisible,
+        enter = slideInVertically(
+            initialOffsetY = { it },
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMedium
             )
+        ) + fadeIn(tween(300)),
+        exit = slideOutVertically(
+            targetOffsetY = { it },
+            animationSpec = tween(250, easing = FastOutSlowInEasing)
+        ) + fadeOut(tween(250))
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = 100.dp), // Leave space for status bar and some background
+            contentAlignment = Alignment.BottomCenter
         ) {
-            Column(
+            Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .fillMaxHeight(0.85f) // Take up 85% of remaining height
+                    .offset(y = animatedOffset.dp)
+                    .shadow(
+                        elevation = 24.dp,
+                        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                        spotColor = Color.Black.copy(alpha = 0.1f)
+                    ),
+                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color.White
+                ),
+                elevation = CardDefaults.cardElevation(0.dp) // Remove default elevation
             ) {
-                Text(
-                    text = "Add New Task",
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF333333)
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                OutlinedTextField(
-                    value = taskText,
-                    onValueChange = onTaskTextChange,
-                    label = { Text("Task description") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Priority Selection
-                Text(
-                    text = "Priority",
-                    fontSize = 14.sp,
-                    color = Color.Gray,
-                    modifier = Modifier.align(Alignment.Start)
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.White,
+                                    Color(0xFFFAFAFA)
+                                )
+                            )
+                        )
                 ) {
-                    TaskPriority.values().forEach { taskPriority ->
-                        val isSelected = priority == taskPriority
+                    // Drag Handle
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Box(
                             modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(12.dp))
+                                .width(36.dp)
+                                .height(4.dp)
                                 .background(
-                                    if (isSelected) taskPriority.color.copy(alpha = 0.2f)
-                                    else Color.LightGray.copy(alpha = 0.3f)
+                                    Color.Gray.copy(alpha = 0.3f),
+                                    RoundedCornerShape(2.dp)
                                 )
-                                .border(
-                                    1.dp,
-                                    if (isSelected) taskPriority.color else Color.Transparent,
-                                    RoundedCornerShape(12.dp)
-                                )
-                                .clickable { onPriorityChange(taskPriority) }
-                                .padding(vertical = 8.dp),
-                            contentAlignment = Alignment.Center
+                        )
+                    }
+
+                    // Header Section
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp, vertical = 8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
+                            TextButton(
+                                onClick = onDismiss,
+                                colors = ButtonDefaults.textButtonColors(
+                                    contentColor = Color(0xFF667eea)
+                                )
+                            ) {
+                                Text(
+                                    text = "Cancel",
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+
                             Text(
-                                text = taskPriority.label,
-                                fontSize = 14.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isSelected) taskPriority.color else Color.Gray
+                                text = "New Task",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF1D1D1F)
                             )
-                        }
-                    }
-                }
 
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Category Selection
-                Text(
-                    text = "Category",
-                    fontSize = 14.sp,
-                    color = Color.Gray,
-                    modifier = Modifier.align(Alignment.Start)
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Replace the ExposedDropdownMenuBox section with this:
-                var expanded by remember { mutableStateOf(false) }
-
-                ExposedDropdownMenuBox(
-                    expanded = expanded,
-                    onExpandedChange = { expanded = it },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    OutlinedTextField(
-                        value = selectedCategory,
-                        onValueChange = { }, // Keep empty for read-only
-                        readOnly = true,
-                        label = { Text("Select Category") },
-                        trailingIcon = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
-                        },
-                        modifier = Modifier
-                            .menuAnchor()
-                            .fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Color(0xFF667eea),
-                            unfocusedBorderColor = Color(0xFFE0E0E0),
-                            focusedLabelColor = Color(0xFF667eea),
-                            unfocusedLabelColor = Color.Gray
-                        )
-                    )
-
-                    ExposedDropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        categories.forEach { category ->
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        text = category,
-                                        color = Color.Black,
-                                        fontSize = 16.sp
-                                    )
-                                },
+                            TextButton(
                                 onClick = {
-                                    onCategoryChange(category)
-                                    expanded = false
+                                    if (taskText.isNotBlank()) {
+                                        onConfirm(taskText, priority, selectedCategory)
+                                    }
                                 },
-                                modifier = Modifier.fillMaxWidth()
+                                enabled = taskText.isNotBlank(),
+                                colors = ButtonDefaults.textButtonColors(
+                                    contentColor = Color(0xFF007AFF),
+                                    disabledContentColor = Color(0xFF007AFF).copy(alpha = 0.3f)
+                                )
+                            ) {
+                                Text(
+                                    text = "Add",
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+
+                        Divider(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp),
+                            color = Color(0xFFE5E5E7),
+                            thickness = 0.5.dp
+                        )
+                    }
+
+                    // Content Section
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp)
+                            .padding(top = 24.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        // Task Input Section
+                        Text(
+                            text = "Task Description",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFF8E8E93),
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = Color(0xFFF2F2F7)
+                            ),
+                            elevation = CardDefaults.cardElevation(0.dp)
+                        ) {
+                            BasicTextField(
+                                value = taskText,
+                                onValueChange = onTaskTextChange,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                textStyle = TextStyle(
+                                    fontSize = 17.sp,
+                                    color = Color(0xFF1D1D1F),
+                                    fontWeight = FontWeight.Normal, // Changed from Regular to Normal
+                                ),
+                                decorationBox = { innerTextField ->
+                                    if (taskText.isEmpty()) {
+                                        Text(
+                                            text = "What needs to be done?",
+                                            fontSize = 17.sp,
+                                            color = Color(0xFF8E8E93)
+                                        )
+                                    }
+                                    innerTextField()
+                                },
+                                cursorBrush = SolidColor(Color(0xFF007AFF))
                             )
                         }
-                    }
-                }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                        Spacer(modifier = Modifier.height(32.dp))
 
-                // Replace the button Row with this enhanced version:
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = onDismiss,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = Color(0xFF667eea)
-                        ),
-                        border = BorderStroke(2.dp, Color(0xFF667eea))
-                    ) {
+                        // Priority Section
                         Text(
-                            text = "Cancel",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.SemiBold
+                            text = "Priority",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFF8E8E93),
+                            modifier = Modifier.padding(bottom = 12.dp)
                         )
-                    }
 
-                    Button(
-                        onClick = {
-                            // For Add Dialog: onConfirm(taskText, priority, selectedCategory)
-                            // For Edit Dialog: onConfirm(taskText, priority)
-                            onConfirm(taskText, priority, selectedCategory) // Use this line for Add Dialog
-                            // onConfirm(taskText, priority) // Use this line for Edit Dialog instead
-                        },
-                        enabled = taskText.isNotBlank(), // Add validation
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF667eea),
-                            disabledContainerColor = Color(0xFF667eea).copy(alpha = 0.5f)
-                        ),
-                        elevation = ButtonDefaults.buttonElevation(
-                            defaultElevation = 4.dp,
-                            pressedElevation = 8.dp
-                        )
-                    ) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = Color(0xFFF2F2F7)
+                            ),
+                            elevation = CardDefaults.cardElevation(0.dp)
+                        ) {
+                            Column {
+                                TaskPriority.values().forEachIndexed { index, taskPriority ->
+                                    val isSelected = priority == taskPriority
+                                    val isLast = index == TaskPriority.values().size - 1
+
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { onPriorityChange(taskPriority) }
+                                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(12.dp)
+                                                    .background(
+                                                        taskPriority.color,
+                                                        CircleShape
+                                                    )
+                                            )
+
+                                            Spacer(modifier = Modifier.width(12.dp))
+
+                                            Text(
+                                                text = "${taskPriority.label} Priority",
+                                                fontSize = 17.sp,
+                                                fontWeight = FontWeight.Normal, // Changed from Regular to Normal
+                                                color = Color(0xFF1D1D1F)
+                                            )
+                                        }
+
+                                        if (isSelected) {
+                                            Icon(
+                                                painter = painterResource(id = android.R.drawable.ic_menu_send),
+                                                contentDescription = "Selected",
+                                                tint = Color(0xFF007AFF),
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
+
+                                    if (!isLast) {
+                                        Divider(
+                                            modifier = Modifier.padding(horizontal = 16.dp),
+                                            color = Color(0xFFE5E5E7),
+                                            thickness = 0.5.dp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(32.dp))
+
+                        // Category Section
                         Text(
-                            text = "Add Task", // Change to "Save" for Edit Dialog
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            text = "Category",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFF8E8E93),
+                            modifier = Modifier.padding(bottom = 12.dp)
                         )
+
+                        var expanded by remember { mutableStateOf(false) }
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = Color(0xFFF2F2F7)
+                            ),
+                            elevation = CardDefaults.cardElevation(0.dp)
+                        ) {
+                            Column {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { expanded = !expanded }
+                                        .padding(16.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        val categoryIcon = when (selectedCategory) {
+                                            "Personal" -> "👤"
+                                            "Work" -> "💼"
+                                            "Shopping" -> "🛒"
+                                            "Health" -> "💊"
+                                            else -> "📝"
+                                        }
+
+                                        Text(
+                                            text = categoryIcon,
+                                            fontSize = 20.sp
+                                        )
+
+                                        Spacer(modifier = Modifier.width(12.dp))
+
+                                        Text(
+                                            text = selectedCategory,
+                                            fontSize = 17.sp,
+                                            fontWeight = FontWeight.Normal, // Changed from Regular to Normal
+                                            color = Color(0xFF1D1D1F)
+                                        )
+                                    }
+
+                                    Icon(
+                                        painter = painterResource(
+                                            id = if (expanded) android.R.drawable.arrow_up_float
+                                            else android.R.drawable.arrow_down_float
+                                        ),
+                                        contentDescription = if (expanded) "Collapse" else "Expand",
+                                        tint = Color(0xFF8E8E93),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+
+                                AnimatedVisibility(
+                                    visible = expanded,
+                                    enter = expandVertically() + fadeIn(),
+                                    exit = shrinkVertically() + fadeOut()
+                                ) {
+                                    Column {
+                                        Divider(
+                                            modifier = Modifier.padding(horizontal = 16.dp),
+                                            color = Color(0xFFE5E5E7),
+                                            thickness = 0.5.dp
+                                        )
+
+                                        categories.forEach { category ->
+                                            val isSelected = selectedCategory == category
+                                            val categoryIcon = when (category) {
+                                                "Personal" -> "👤"
+                                                "Work" -> "💼"
+                                                "Shopping" -> "🛒"
+                                                "Health" -> "💊"
+                                                else -> "📝"
+                                            }
+
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable {
+                                                        onCategoryChange(category)
+                                                        expanded = false
+                                                    }
+                                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text(
+                                                        text = categoryIcon,
+                                                        fontSize = 20.sp
+                                                    )
+
+                                                    Spacer(modifier = Modifier.width(12.dp))
+
+                                                    Text(
+                                                        text = category,
+                                                        fontSize = 17.sp,
+                                                        fontWeight = FontWeight.Normal, // Changed from Regular to Normal
+                                                        color = Color(0xFF1D1D1F)
+                                                    )
+                                                }
+
+                                                if (isSelected) {
+                                                    Icon(
+                                                        painter = painterResource(id = android.R.drawable.ic_menu_send),
+                                                        contentDescription = "Selected",
+                                                        tint = Color(0xFF007AFF),
+                                                        modifier = Modifier.size(20.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Bottom padding for scroll
+                        Spacer(modifier = Modifier.height(40.dp))
                     }
                 }
             }
